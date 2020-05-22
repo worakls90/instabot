@@ -1,7 +1,7 @@
 import random
 
-APP_VERSION = "136.0.0.34.124"
-VERSION_CODE = "208061712"
+APP_VERSION = "142.0.0.34.110"
+VERSION_CODE = "215464403"
 DEVICES = {
     "one_plus_7": {
         "app_version": APP_VERSION,

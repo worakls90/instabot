@@ -8,7 +8,7 @@ DEFAULT_SECRET_DIR = os.path.abspath(os.getcwd())
 
 
 def get_credential_file(base_path=DEFAULT_SECRET_DIR):
-    return base_path + "/config/secret.txt"
+    return base_path + "/secret.txt"
 
 
 def add_credentials(base_path):
@@ -26,7 +26,7 @@ def add_credentials(base_path):
 def get_credentials(base_path, username=None):
     SECRET_FILE = get_credential_file(base_path)
     """Returns login and password stored in `secret.txt`."""
-    while not check_secret():
+    while not check_secret(base_path):
         pass
     while True:
         try:

@@ -14,12 +14,13 @@ import pytz
 import requests
 import requests.utils
 import six.moves.urllib as urllib
-
-from requests_toolbelt import MultipartEncoder
 from tqdm import tqdm
-from Crypto.PublicKey import RSA
-import rsa
-from Cryptodome.Cipher import AES
+from requests_toolbelt import MultipartEncoder
+
+from Cryptodome.Random import get_random_bytes
+from Cryptodome.Cipher import AES, PKCS1_v1_5
+import struct
+from Cryptodome.PublicKey import RSA
 
 from . import config, devices
 from .api_login import (
@@ -214,38 +215,35 @@ class API(object):
         return save_uuid_and_cookie(self)
 
     def encrypt_password(self, password):
-        IG_LOGIN_ANDROID_PUBLIC_KEY = "LS0tLS1CRUdJTiBQVUJMSUMgS0VZLS0tLS0KTUlJQklqQU5CZ2txaGtpRzl3MEJBUUVGQUFPQ0FROEFNSUlCQ2dLQ0FRRUF1enRZOEZvUlRGRU9mK1RkTGlUdAplN3FIQXY1cmdBMmk5RkQ0YjgzZk1GK3hheW14b0xSdU5KTitRanJ3dnBuSm1LQ0QxNGd3K2w3TGQ0RHkvRHVFCkRiZlpKcmRRWkJIT3drS3RqdDdkNWlhZFdOSjdLczlBM0NNbzB5UktyZFBGU1dsS21lQVJsTlFrVXF0YkNmTzcKT2phY3ZYV2dJcGlqTkdJRVk4UkdzRWJWZmdxSmsrZzhuQWZiT0xjNmEwbTMxckJWZUJ6Z0hkYWExeFNKOGJHcQplbG4zbWh4WDU2cmpTOG5LZGk4MzRZSlNaV3VxUHZmWWUrbEV6Nk5laU1FMEo3dE80eWxmeWlPQ05ycnF3SnJnCjBXWTFEeDd4MHlZajdrN1NkUWVLVUVaZ3FjNUFuVitjNUQ2SjJTSTlGMnNoZWxGNWVvZjJOYkl2TmFNakpSRDgKb1FJREFRQUIKLS0tLS1FTkQgUFVCTElDIEtFWS0tLS0tCg=="
-        IG_LOGIN_ANDROID_PUBLIC_KEY_ID = 205
-
-        key = secrets.token_bytes(32)
-        iv = secrets.token_bytes(12)
+        # Takes the Public Key ID
+        publickeyid = 204
+        # Takes the Public Key
+        publickey = "LS0tLS1CRUdJTiBQVUJMSUMgS0VZLS0tLS0KTUlJQklqQU5CZ2txaGtpRzl3MEJBUUVGQUFPQ0FROEFNSUlCQ2dLQ0FRRUF5TUd0WkdCOWZpYTlTNWp3dkRLOQpEWER4WmZuaEwzU3gvUE5nQ0xQdDhnNCtwTzZXVDhiTHNpaVE2WFpURWFkcE5yV0lhWWY5MEhTcEVmWFpRZ2RzCmRtRXVFUjVXVEt4NGtZeTVFT3U1ZWFhcVY5cktwdytwMVpjSEpGcTJQMzVjK01KOElBcldPd0pWd1RVRm94SXEKc2VWeVF4c2ZBWTBtYnVSNEpPZzg4bVpXVnZMRkJnUWs2bEpueEg4RDdtdmRKVnlXWGJUMDhJTER4d1IvZk9MNwoyQm9ua0FZTXJ4NnZ4ZlZreW9LVm01SGZDelZkakRLcXR4RXgwTFdkbVBvbXh3VFlRbXFXTUt4MXhuTjEzZ3FNCitwZjhNUmZiWWhpbGltR3hXVk5yMk1aNGxvZ3k1bGdHNUlya0d4TVNGWitVYXFoTFlMaEs0UTkyTzBtckR0MlcKRXdJREFRQUIKLS0tLS1FTkQgUFVCTElDIEtFWS0tLS0tCg=="
+        # Generates the AES Random Key
+        session_key = get_random_bytes(32)
+        # Creates the random IV
+        iv = get_random_bytes(12)
+        # Generates the current time in Epoch
         time = str(int(datetime.datetime.now().timestamp()))
+        # Decodes the Public key from base64
+        decoded_publickey = base64.b64decode(publickey.encode())
+        # Imports the Public key
+        recipient_key = RSA.import_key(decoded_publickey)
+        # Encrypts Randomly generated AES Key with Public Key
+        cipher_rsa = PKCS1_v1_5.new(recipient_key)
+        enc_session_key = cipher_rsa.encrypt(session_key)
+        # Create a new AES cipher in GCM Mode
+        cipher_aes = AES.new(session_key, AES.MODE_GCM, nonce=iv)
+        cipher_aes.update(time.encode())
+        ciphertext, tag = cipher_aes.encrypt_and_digest(password.encode("utf8"))
 
-        base64_decoded_device_public_key = base64.b64decode(
-            IG_LOGIN_ANDROID_PUBLIC_KEY.encode()
-        )
+        payload = base64.b64encode((b"\x01" + publickeyid.to_bytes(1, byteorder='little') + iv + len(enc_session_key).to_bytes(2, byteorder='little') + enc_session_key + tag + ciphertext))
+        
+        #payload = base64.b64encode((b"\x01" + struct.pack('H', publickeyid)) + iv + struct.pack('h', len(enc_session_key)) + enc_session_key + tag + ciphertext)
 
-        public_key = RSA.importKey(base64_decoded_device_public_key)
 
-        encrypted_aes_key = rsa.encrypt(key, public_key)
+        return f"#PWD_INSTAGRAM:4:{time}:{payload.decode()}"
 
-        cipher = AES.new(key, AES.MODE_GCM, iv)
-        cipher.update(time.encode())
-        encrypted_password, tag = cipher.encrypt_and_digest(password.encode())
-
-        payload = (
-            b"\x01"
-            + str(IG_LOGIN_ANDROID_PUBLIC_KEY_ID).encode()
-            + iv
-            + b"0001"
-            + encrypted_aes_key
-            + tag
-            + encrypted_password
-        )
-
-        base64_encoded_payload = base64.b64encode(payload)
-
-        return f"#PWD_INSTAGRAM:4:{time}:{base64_encoded_payload.decode()}"
 
     def login(
         self,
@@ -316,17 +314,14 @@ class API(object):
                     "jazoest": str(random.randint(22000, 22999)),
                     "country_codes": '[{"country_code":"1","source":["default"]}]',
                     "phone_id": self.phone_id,
-                    "_csrftoken": self.token,
+                    "enc_password": self.encrypt_password(self.password),
                     "username": self.username,
                     "adid": "",
                     "guid": self.uuid,
                     "device_id": self.device_id,
                     "google_tokens": "[]",
-                    "password": self.password,
-                    # "enc_password": self.encrypt_password(self.password),
-                    # "enc_password:" "#PWD_INSTAGRAM:4:TIME:ENCRYPTED_PASSWORD"
-                    "login_attempt_count": "1",
-                }
+                    "login_attempt_count": "0",
+                }, separators=(',', ':')
             )
 
             if self.send_request("accounts/login/", data, True):
@@ -1360,15 +1355,9 @@ class API(object):
 
     @staticmethod
     def generate_signature(data):
-        body = (
-            hmac.new(
-                config.IG_SIG_KEY.encode("utf-8"), data.encode("utf-8"), hashlib.sha256
-            ).hexdigest()
-            + "."
-            + urllib.parse.quote(data)
-        )
-        signature = "signed_body={body}&ig_sig_key_version={sig_key}"
-        return signature.format(sig_key=config.SIG_KEY_VERSION, body=body)
+        body = (urllib.parse.quote(data))
+        signature = "signed_body=SIGNATURE.{body}"
+        return signature.format(body=body)
 
     @staticmethod
     def generate_device_id(seed):

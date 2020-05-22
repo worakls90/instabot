@@ -3,7 +3,7 @@ import random
 
 API_DOMAIN = "i.instagram.com"
 API_URL = "https://{domain}/api/v1/".format(domain=API_DOMAIN)
-APP_VERSION = "136.0.0.34.124"
+APP_VERSION = "142.0.0.34.110"
 USER_AGENT_BASE = (
     "Instagram {app_version} "
     "Android ({android_version}/{android_release}; "
